@@ -10,10 +10,10 @@ import cereal.messaging as messaging
 from openpilot.common.realtime import set_realtime_priority
 from openpilot.common.swaglog import cloudlog
 
-_FLAG = "/persist/nav_assist_shadow"
+_FLAG = "/data/media/nav_assist_shadow"
 
 def _is_enabled() -> bool:
-  return os.path.isfile(_FLAG) and open(_FLAG).read().strip() == "1"
+  return os.path.isfile(_FLAG)
 
 # Maneuver classes emitted by this module
 MANEUVER_NONE = "none"
