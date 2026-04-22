@@ -3,12 +3,17 @@
 # SAFETY: Read-only observer. Does NOT publish to any planner or actuator channel.
 # Gate: Params key 'NavAssistShadowEnabled' (default False)
 
+import os
 import time
 
 import cereal.messaging as messaging
-from openpilot.common.params import Params
 from openpilot.common.realtime import set_realtime_priority
 from openpilot.common.swaglog import cloudlog
+
+_FLAG = "/data/params/d/NavAssistShadowEnabled"
+
+def _is_enabled() -> bool:
+  return os.path.isfile(_FLAG) and open(_FLAG).read().strip() == "1"
 
 # Maneuver classes emitted by this module
 MANEUVER_NONE = "none"
@@ -70,10 +75,8 @@ def compute_maneuver(nav_instruction) -> tuple[str, float, float]:
 
 
 def nav_assist_thread():
-  params = Params()
-
   # Hard gate: bail immediately if not enabled
-  if not params.get_bool("NavAssistShadowEnabled"):
+  if not _is_enabled():
     cloudlog.info("[nav_assist] NavAssistShadowEnabled=False, exiting.")
     return
 
@@ -97,7 +100,7 @@ def nav_assist_thread():
     sm.update()
 
     # Re-check param each cycle to allow hot-disable
-    if not params.get_bool("NavAssistShadowEnabled"):
+    if not _is_enabled():
       cloudlog.info("[nav_assist] NavAssistShadowEnabled toggled off, exiting.")
       break
 

@@ -49,7 +49,12 @@ def allow_uploads(started, params, CP: car.CarParams, classic_model, tinygrad_mo
   return not frogpilot_toggles.no_uploads or frogpilot_toggles.no_onroad_uploads
 
 def nav_assist_enabled(started, params, CP: car.CarParams, classic_model, tinygrad_model, frogpilot_toggles) -> bool:
-  return params.get_bool("NavAssistShadowEnabled")
+  # Read directly from filesystem: NavAssistShadowEnabled is not registered in
+  # the compiled params key list (params.cc) so params.get_bool() would raise
+  # UnknownKeyName. Direct file read bypasses that validation safely.
+  import os
+  flag = "/data/params/d/NavAssistShadowEnabled"
+  return os.path.isfile(flag) and open(flag).read().strip() == "1"
 
 def run_classic_modeld(started, params, CP: car.CarParams, classic_model, tinygrad_model, frogpilot_toggles) -> bool:
   return started and classic_model
