@@ -10,7 +10,7 @@ import cereal.messaging as messaging
 from openpilot.common.realtime import set_realtime_priority
 from openpilot.common.swaglog import cloudlog
 
-_FLAG = "/data/params/d/NavAssistShadowEnabled"
+_FLAG = "/persist/nav_assist_shadow"
 
 def _is_enabled() -> bool:
   return os.path.isfile(_FLAG) and open(_FLAG).read().strip() == "1"

@@ -53,7 +53,7 @@ def nav_assist_enabled(started, params, CP: car.CarParams, classic_model, tinygr
   # the compiled params key list (params.cc) so params.get_bool() would raise
   # UnknownKeyName. Direct file read bypasses that validation safely.
   import os
-  flag = "/data/params/d/NavAssistShadowEnabled"
+  flag = "/persist/nav_assist_shadow"
   return os.path.isfile(flag) and open(flag).read().strip() == "1"
 
 def run_classic_modeld(started, params, CP: car.CarParams, classic_model, tinygrad_model, frogpilot_toggles) -> bool:
