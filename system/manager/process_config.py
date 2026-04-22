@@ -46,6 +46,9 @@ def allow_logging(started, params, CP: car.CarParams, classic_model, tinygrad_mo
   return not frogpilot_toggles.no_logging and logging(started, params, CP, classic_model, tinygrad_model, frogpilot_toggles)
 
 def allow_uploads(started, params, CP: car.CarParams, classic_model, tinygrad_model, frogpilot_toggles) -> bool:
+
+  def nav_assist_enabled(started, params, CP: car.CarParams, classic_model, tinygrad_model, frogpilot_toggles):
+      return params.get_bool("NavAssistShadowEnabled")
   return not frogpilot_toggles.no_uploads or frogpilot_toggles.no_onroad_uploads
 
 def run_classic_modeld(started, params, CP: car.CarParams, classic_model, tinygrad_model, frogpilot_toggles) -> bool:
@@ -112,6 +115,7 @@ procs = [
   # FrogPilot processes
   NativeProcess("classic_modeld", "frogpilot/classic_modeld", ["./classic_modeld"], run_classic_modeld),
   PythonProcess("frogpilot_process", "frogpilot.frogpilot_process", always_run),
+    PythonProcess("nav_assist", "frogpilot.navigation.nav_assist", nav_assist_enabled),
   PythonProcess("mapd", "frogpilot.navigation.mapd", always_run),
   PythonProcess("speed_limit_filler", "frogpilot.system.speed_limit_filler", run_speed_limit_filler),
   PythonProcess("the_pond", "frogpilot.system.the_pond.the_pond", always_run),
