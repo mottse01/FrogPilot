@@ -85,7 +85,11 @@ def nav_assist_thread():
     "navRoute",
   ])
 
-  cloudlog.info("[nav_assist] Shadow mode active. Logging only - no control effect.")
+  # Publish predictions to dedicated shadow channel; nothing in the control
+  # path subscribes to navAssistShadow.
+  pm = messaging.PubMaster(["navAssistShadow"])
+
+  cloudlog.info("[nav_assist] Shadow mode active.")
 
   last_log = 0.0
 
@@ -107,6 +111,13 @@ def nav_assist_thread():
 
     # Compute shadow maneuver prediction
     maneuver_class, distance_m, confidence = compute_maneuver(nav_instr)
+
+    msg = messaging.new_message("navAssistShadow")
+    msg.navAssistShadow.maneuverClass = maneuver_class
+    msg.navAssistShadow.maneuverDistanceM = distance_m
+    msg.navAssistShadow.confidence = confidence
+    msg.navAssistShadow.active = True
+    pm.send("navAssistShadow", msg)
 
     cloudlog.info(
       f"[nav_assist] maneuver={maneuver_class} dist={distance_m:.1f}m conf={confidence:.2f}"
