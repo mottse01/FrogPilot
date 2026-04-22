@@ -181,7 +181,7 @@ struct FrogPilotNavigation @0xf416ec09499d9d19 {
   navigationSpeedLimit @2 :Float32;
 }
 
-struct NavAssistShadow @0x5ef672842796f5ea {
+struct NavAssistShadow @0xb5056cc0b66af327 {
   maneuverClass @0 :Text;
   maneuverDistanceM @1 :Float32;
   confidence @2 :Float32;
