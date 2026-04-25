@@ -1,4 +1,4 @@
-import { html } from "https://esm.sh/@arrow-js/core"
+import { html } from "/assets/vendor/arrow-js-core.mjs"
 
 export function DoorControl () {
   async function lockDoors () {
