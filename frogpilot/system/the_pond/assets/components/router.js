@@ -1,5 +1,5 @@
-import { html, reactive } from "https://esm.sh/@arrow-js/core"
-import { createBrowserHistory, createRouter } from "https://esm.sh/@remix-run/router@1.3.1"
+import { html, reactive } from "/assets/vendor/arrow-js-core.mjs"
+import { createBrowserHistory, createRouter } from "/assets/vendor/remix-router-1.3.1.mjs"
 import { hideSidebar } from "/assets/js/utils.js"
 import { DoorControl } from "/assets/components/tools/doors.js"
 import { ErrorLogs } from "/assets/components/tools/error_logs.js"
