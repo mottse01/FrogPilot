@@ -1,1803 +1,566 @@
-// node_modules/@arrow-js/core/dist/chunks/internal-DchK7S7v.mjs
-var queueMarker = /* @__PURE__ */ Symbol();
-var queueStack = [];
-var nextTicks = [];
-var cleanupCollector = null;
+// node_modules/@arrow-js/core/dist/index.mjs
+var queueStack = /* @__PURE__ */ new Set();
+var nextTicks = /* @__PURE__ */ new Set();
 function nextTick(fn) {
-  return !queueStack.length ? Promise.resolve(fn?.()) : new Promise((resolve) => nextTicks.push(() => {
-    fn?.();
+  if (!queueStack.size) {
+    if (fn)
+      fn();
+    return Promise.resolve();
+  }
+  let resolve;
+  const p = new Promise((r2) => {
+    resolve = r2;
+  });
+  nextTicks.add(() => {
+    if (fn)
+      fn();
     resolve();
-  }));
+  });
+  return p;
 }
 function isTpl(template) {
   return typeof template === "function" && !!template.isT;
 }
-function isO(obj) {
-  return obj !== null && typeof obj === "object";
-}
 function isR(obj) {
-  return isO(obj) && "$on" in obj;
+  return typeof obj === "object" && obj !== null && "$on" in obj && typeof obj.$on === "function";
 }
-function isChunk(chunk) {
-  return isO(chunk) && "ref" in chunk;
+function isReactiveFunction(fn) {
+  return "$on" in fn;
 }
 function queue(fn) {
-  const queued = fn;
   return (newValue, oldValue) => {
-    if (!queued[queueMarker]) {
-      queued[queueMarker] = true;
-      queued._n = newValue;
-      queued._o = oldValue;
-      if (!queueStack.length) {
+    function executeQueue() {
+      const queue2 = Array.from(queueStack);
+      queueStack.clear();
+      const ticks = Array.from(nextTicks);
+      nextTicks.clear();
+      queue2.forEach((fn2) => fn2(newValue, oldValue));
+      ticks.forEach((fn2) => fn2());
+      if (queueStack.size) {
         queueMicrotask(executeQueue);
       }
-      queueStack.push(queued);
     }
+    if (!queueStack.size) {
+      queueMicrotask(executeQueue);
+    }
+    queueStack.add(fn);
   };
 }
-function executeQueue() {
-  const queue2 = queueStack;
-  queueStack = [];
-  const ticks = nextTicks;
-  nextTicks = [];
-  for (let i = 0; i < queue2.length; i++) {
-    const fn = queue2[i];
-    const newValue = fn._n;
-    const oldValue = fn._o;
-    fn._n = void 0;
-    fn._o = void 0;
-    fn[queueMarker] = false;
-    fn(newValue, oldValue);
-  }
-  for (let i = 0; i < ticks.length; i++)
-    ticks[i]();
-  if (queueStack.length) {
-    queueMicrotask(executeQueue);
-  }
+var measurements = {};
+function measure(label, fn) {
+  const start = performance.now();
+  const isFn = typeof fn === "function";
+  label = isFn ? `${label} (ms)` : `${label} (calls)`;
+  const x = isFn ? fn() : fn;
+  const result = isFn ? performance.now() - start : fn;
+  if (!measurements[label])
+    measurements[label] = [result];
+  else
+    measurements[label].push(result);
+  return x;
 }
-function swapCleanupCollector(collector) {
-  const previous = cleanupCollector;
-  cleanupCollector = collector;
-  return previous;
-}
-function registerCleanup(fn) {
-  cleanupCollector?.push(fn);
-}
-function onCleanup(fn) {
-  const collector = cleanupCollector;
-  if (!collector)
-    throw Error("onCleanup needs component");
-  let active = 1;
-  const dispose = () => active-- && (collector.splice(collector.indexOf(dispose), 1), fn());
-  return collector.push(dispose), dispose;
-}
-function setAttr(node, attrName, value) {
-  if (attrName === ".innerhtml")
-    attrName = ".innerHTML";
-  const isIDL = attrName === "value" && "value" in node || attrName === "checked" || attrName[0] === "." && (attrName = attrName.slice(1));
-  if (isIDL) {
-    node[attrName] = value;
-    if (node.getAttribute(attrName) != value)
-      value = false;
-  }
-  value !== false ? node.setAttribute(attrName, value) : node.removeAttribute(attrName);
-}
-var expressionPool = [];
-var expressionObservers = [];
-var expressionObserverAttrs = [];
-var freeExpressionPointers = [];
-var cursor = 0;
-function createExpressionBlock(len) {
-  const bucket = freeExpressionPointers[len];
-  const pointer = bucket?.length ? bucket.pop() : cursor;
-  expressionPool[pointer] = len;
-  if (pointer === cursor)
-    cursor += len + 1;
-  return pointer;
-}
-function writeExpressions(expSlots, pointer, offset = 0) {
-  const len = expressionPool[pointer];
-  for (let i = 1; i <= len; i++) {
-    const nextValue = expSlots[offset + i - 1];
-    const target = pointer + i;
-    if (Object.is(expressionPool[target], nextValue))
-      continue;
-    expressionPool[target] = nextValue;
-    const observer = expressionObservers[target];
-    if (!observer)
-      continue;
-    const attr = expressionObserverAttrs[target];
-    if (attr !== void 0)
-      setAttr(observer, attr, nextValue);
-    else if (typeof observer === "function")
-      observer(nextValue);
-    else
-      observer.data = nextValue || nextValue === 0 ? nextValue : "";
-  }
-}
-function onExpressionUpdate(pointer, observer, attrName) {
-  expressionObservers[pointer] = observer;
-  expressionObserverAttrs[pointer] = attrName;
-}
-function releaseExpressions(pointer) {
-  const len = expressionPool[pointer];
-  if (len === void 0)
-    return;
-  for (let i = 0; i <= len; i++) {
-    expressionPool[pointer + i] = void 0;
-    expressionObservers[pointer + i] = void 0;
-    expressionObserverAttrs[pointer + i] = void 0;
-  }
-  (freeExpressionPointers[len] ??= []).push(pointer);
-}
-var ids = /* @__PURE__ */ new WeakMap();
-var computedIds = [];
-var listeners = [];
-var getId = (target) => ids.get(target);
-var index = -1;
-var watchIndex = 0;
-var trackKey = 0;
-var trackedDependencies = [];
-var watchedDependencies = [];
-var dependencyPool = [];
-var arrayMutationWrappers = [];
-var arrayMutations = {
-  push: 1,
-  pop: 1,
-  shift: 1,
-  unshift: 1,
-  splice: 1,
-  sort: 1,
-  copyWithin: 1,
-  fill: 1,
-  reverse: 1
-};
-var parents = [];
-function reactive(data) {
-  if (typeof data === "function") {
-    const state = reactive({
-      value: void 0
-    });
-    computedIds[getId(state)] = true;
-    watch(data, (value) => state.value = value);
-    return state;
-  }
-  if (isR(data))
+var dependencyCollector = /* @__PURE__ */ new Map();
+function r(data, state = {}) {
+  if (isR(data) || typeof data !== "object")
     return data;
-  if (!isO(data))
-    throw Error("Expected object");
-  const id = ++index;
-  listeners[id] = {};
-  const proxy = new Proxy(data, proxyHandler);
-  ids.set(data, id).set(proxy, id);
+  const observers = state.o || /* @__PURE__ */ new Map();
+  const observerProperties = state.op || /* @__PURE__ */ new Map();
+  const isArray = Array.isArray(data);
+  const children = [];
+  const proxySource = isArray ? [] : Object.create(data, {});
+  for (const property in data) {
+    const entry = data[property];
+    if (typeof entry === "object" && entry !== null) {
+      proxySource[property] = !isR(entry) ? r(entry) : entry;
+      children.push(property);
+    } else {
+      proxySource[property] = entry;
+    }
+  }
+  const dep = (a) => (p, c) => {
+    let obs = observers.get(p);
+    let props = observerProperties.get(c);
+    if (!obs) {
+      obs = /* @__PURE__ */ new Set();
+      observers.set(p, obs);
+    }
+    if (!props) {
+      props = /* @__PURE__ */ new Set();
+      observerProperties.set(c, props);
+    }
+    obs[a](c);
+    props[a](p);
+  };
+  const $on = dep("add");
+  const $off = dep("delete");
+  const _em = (property, newValue, oldValue) => {
+    observers.has(property) && observers.get(property).forEach((c) => c(newValue, oldValue));
+  };
+  const _st = () => {
+    return {
+      o: observers,
+      op: observerProperties,
+      r: proxySource,
+      p: proxy._p
+    };
+  };
+  const depProps = {
+    $on,
+    $off,
+    _em,
+    _st,
+    _p: void 0
+  };
+  const proxy = new Proxy(proxySource, {
+    has(target, key) {
+      return key in depProps || key in target;
+    },
+    get(...args) {
+      const [, p] = args;
+      if (Reflect.has(depProps, p))
+        return Reflect.get(depProps, p);
+      const value = Reflect.get(...args);
+      addDep(proxy, p);
+      if (isArray && p in Array.prototype) {
+        return arrayOperation(p, proxySource, proxy, value);
+      }
+      return value;
+    },
+    set(...args) {
+      const [target, property, value] = args;
+      const old = Reflect.get(target, property);
+      if (Reflect.has(depProps, property)) {
+        return Reflect.set(depProps, property, value);
+      }
+      if (value && isR(old)) {
+        const o = old;
+        const oldState = o._st();
+        const newR = isR(value) ? reactiveMerge(value, o) : r(value, oldState);
+        Reflect.set(
+          target,
+          property,
+          // Create a new reactive object
+          newR
+        );
+        _em(property, newR);
+        oldState.o.forEach((_c, property2) => {
+          const oldValue = Reflect.get(old, property2);
+          const newValue = Reflect.get(newR, property2);
+          if (oldValue !== newValue) {
+            o._em(property2, newValue, oldValue);
+          }
+        });
+        return true;
+      }
+      const didSet = Reflect.set(...args);
+      if (didSet) {
+        if (old !== value) {
+          _em(property, value, old);
+        }
+        if (proxy._p) {
+          proxy._p[1]._em(...proxy._p);
+        }
+      }
+      return didSet;
+    }
+  });
+  if (state.p)
+    proxy._p = state.p;
+  children.map((c) => {
+    proxy[c]._p = [c, proxy];
+  });
   return proxy;
 }
-function trackArray(id, key, target, value) {
-  if (typeof value === "function" && arrayMutations[key]) {
-    let wrappers = arrayMutationWrappers[id];
-    if (!wrappers)
-      wrappers = arrayMutationWrappers[id] = {};
-    let wrapper = wrappers[key];
-    if (!wrapper) {
-      wrapper = (...args) => {
-        const result = Reflect.apply(value, target, args);
-        emitParents(id);
-        return result;
-      };
-      wrappers[key] = wrapper;
+function addDep(proxy, property) {
+  dependencyCollector.forEach((tracker) => {
+    let properties = tracker.get(proxy);
+    if (!properties) {
+      properties = /* @__PURE__ */ new Set();
+      tracker.set(proxy, properties);
     }
-    return wrapper;
-  }
-  if (isComputed(value))
-    return readComputed(value, id, key);
-  if (key !== "length" && typeof value !== "function") {
-    track(id, key);
-  }
-  return value;
-}
-var proxyHandler = {
-  has(target, key) {
-    if (key in api)
-      return true;
-    track(getId(target), key);
-    return key in target;
-  },
-  get(target, key, receiver) {
-    const id = getId(target);
-    if (key in api)
-      return api[key];
-    const result = Reflect.get(target, key, receiver);
-    let child;
-    if (isO(result) && !isR(result)) {
-      child = createChild(result, id, key);
-      target[key] = child;
-    }
-    const value = child ?? result;
-    if (Array.isArray(target))
-      return trackArray(id, key, target, value);
-    if (isComputed(value))
-      return readComputed(value, id, key);
-    track(id, key);
-    return value;
-  },
-  set(target, key, value, receiver) {
-    const id = getId(target);
-    const isNewProperty = !(key in target);
-    const newReactive = isO(value) && !isR(value) ? createChild(value, id, key) : null;
-    const oldValue = target[key];
-    const newValue = newReactive ?? value;
-    if (isR(newValue) && computedIds[getId(newValue)]) {
-      linkParent(getId(newValue), id, key);
-    }
-    const didSucceed = Reflect.set(target, key, newValue, receiver);
-    if (oldValue !== newValue && isR(oldValue) && isR(newValue)) {
-      const oldParents = parents[getId(oldValue)];
-      if (oldParents) {
-        let index2 = -1;
-        for (let i = 0; i < oldParents.length; i++) {
-          const [parent, property] = oldParents[i];
-          if (parent == id && property == key) {
-            index2 = i;
-            break;
-          }
-        }
-        if (index2 > -1)
-          oldParents.splice(index2, 1);
-      }
-      linkParent(getId(newValue), id, key);
-    }
-    emit(id, key, value, oldValue, isNewProperty || key === "value" && computedIds[id]);
-    if (Array.isArray(target) && key === "length") {
-      emitParents(id);
-    }
-    return didSucceed;
-  }
-};
-function createChild(child, parentId, key) {
-  const r = reactive(child);
-  linkParent(getId(child), parentId, key);
-  return r;
-}
-function isComputed(value) {
-  return isR(value) && computedIds[getId(value)];
-}
-function readComputed(value, parentId, key) {
-  const computedId = getId(value);
-  track(parentId, key);
-  linkParent(computedId, parentId, key);
-  track(computedId, "value");
-  return value.value;
-}
-function linkParent(childId, parentId, key) {
-  const entries = parents[childId];
-  if (entries) {
-    for (let i = 0; i < entries.length; i++) {
-      const [parent, property] = entries[i];
-      if (parent === parentId && property === key)
-        return;
-    }
-  } else {
-    parents[childId] = [];
-  }
-  parents[childId].push([parentId, key]);
-}
-function emit(id, key, newValue, oldValue, notifyParents) {
-  const targetListeners = listeners[id];
-  const propertyListeners = targetListeners[key];
-  if (propertyListeners) {
-    if (Array.isArray(propertyListeners)) {
-      for (let i = 0; i < propertyListeners.length; i++) {
-        propertyListeners[i](newValue, oldValue);
-      }
-    } else {
-      propertyListeners(newValue, oldValue);
-    }
-  }
-  if (notifyParents) {
-    emitParents(id);
-  }
-}
-function emitParents(id) {
-  const parentEntries = parents[id];
-  if (!parentEntries)
-    return;
-  for (let i = 0; i < parentEntries.length; i++) {
-    const [parentId, property] = parentEntries[i];
-    emit(parentId, property);
-  }
-}
-function reactiveOn(property, callback) {
-  addListener(listeners[getId(this)], property, callback);
-}
-function reactiveOff(property, callback) {
-  removeListener(listeners[getId(this)], property, callback);
-}
-var api = {
-  $on: reactiveOn,
-  $off: reactiveOff
-};
-function track(id, property) {
-  if (!trackKey)
-    return;
-  trackedDependencies[trackKey].push(id, property);
-}
-function startTracking() {
-  trackedDependencies[++trackKey] = dependencyPool.pop() ?? [];
-}
-function stopTracking(watchKey, callback) {
-  const key = trackKey--;
-  const deps = trackedDependencies[key];
-  const previousDeps = watchedDependencies[watchKey];
-  const previousLength = previousDeps?.length;
-  if (previousLength && previousLength === deps.length) {
-    let matched = true;
-    for (let i = 0; i < previousLength; i++) {
-      if (previousDeps[i] === deps[i])
-        continue;
-      matched = false;
-      break;
-    }
-    if (matched) {
-      watchedDependencies[watchKey] = previousDeps;
-      deps.length = 0;
-      dependencyPool.push(deps);
-      trackedDependencies[key] = void 0;
-      return;
-    }
-  }
-  flushListeners(previousDeps, callback);
-  for (let i = 0; i < deps.length; i += 2) {
-    addListener(listeners[deps[i]], deps[i + 1], callback);
-  }
-  watchedDependencies[watchKey] = deps;
-  trackedDependencies[key] = void 0;
-}
-function flushListeners(deps, callback) {
-  if (!deps)
-    return;
-  for (let i = 0; i < deps.length; i += 2) {
-    removeListener(listeners[deps[i]], deps[i + 1], callback);
-  }
-  deps.length = 0;
-  dependencyPool.push(deps);
-}
-function addListener(targetListeners, key, callback) {
-  const slot = targetListeners[key];
-  if (!slot) {
-    targetListeners[key] = callback;
-    return;
-  }
-  if (Array.isArray(slot)) {
-    if (!slot.includes(callback))
-      slot.push(callback);
-    return;
-  }
-  if (slot !== callback)
-    targetListeners[key] = [slot, callback];
-}
-function removeListener(targetListeners, key, callback) {
-  const slot = targetListeners[key];
-  if (!slot)
-    return;
-  if (Array.isArray(slot)) {
-    const index2 = slot.indexOf(callback);
-    if (index2 < 0)
-      return;
-    if (slot.length === 2) {
-      targetListeners[key] = slot[index2 ? 0 : 1];
-      return;
-    }
-    slot.splice(index2, 1);
-    return;
-  }
-  if (slot === callback) {
-    delete targetListeners[key];
-  }
-}
-function watch(effect, afterEffect) {
-  const watchKey = ++watchIndex;
-  const isPointer = typeof effect === "number";
-  let rerun = queue(runEffect);
-  function runEffect() {
-    startTracking();
-    const effectValue = isPointer ? expressionPool[effect]() : effect();
-    stopTracking(watchKey, rerun);
-    return afterEffect ? afterEffect(effectValue) : effectValue;
-  }
-  const stop = () => {
-    flushListeners(watchedDependencies[watchKey], rerun);
-    watchedDependencies[watchKey] = void 0;
-    if (isPointer)
-      onExpressionUpdate(effect);
-    rerun = null;
-  };
-  if (!isPointer)
-    registerCleanup(stop);
-  if (isPointer)
-    onExpressionUpdate(effect, runEffect);
-  return [runEffect(), stop];
-}
-var AsyncFunction = (async () => {
-}).constructor;
-var asyncComponentInstaller = null;
-function setComponentKey(key) {
-  this.k = key;
-  return this;
-}
-var propsProxyHandler = {
-  get(target, key) {
-    return target[0]?.[key];
-  },
-  has(target, key) {
-    return key in (target[0] || {});
-  },
-  ownKeys(target) {
-    return Reflect.ownKeys(target[0] || {});
-  },
-  getOwnPropertyDescriptor(target, key) {
-    const source = target[0];
-    return source && {
-      configurable: true,
-      enumerable: true,
-      writable: true,
-      value: source[key]
-    };
-  },
-  set(target, key, value) {
-    return !!target[0] && Reflect.set(target[0], key, value);
-  }
-};
-var narrowedPropsHandler = {
-  get(target, key) {
-    return target.k.includes(key) ? target.s[key] : void 0;
-  },
-  set(target, key, value) {
-    if (!target.k.includes(key))
-      return false;
-    return Reflect.set(target.s, key, value);
-  }
-};
-function pick(source, ...keys) {
-  return keys.length ? new Proxy({
-    k: keys,
-    s: source
-  }, narrowedPropsHandler) : source;
-}
-function component(factory, options) {
-  if (options || factory.constructor === AsyncFunction) {
-    if (!asyncComponentInstaller) {
-      throw Error("Async runtime missing.");
-    }
-    return asyncComponentInstaller(factory, options);
-  }
-  return ((input, events) => ({
-    h: factory,
-    k: void 0,
-    p: input,
-    e: events,
-    key: setComponentKey
-  }));
-}
-function isCmp(value) {
-  return !!value && typeof value === "object" && "h" in value;
-}
-function createPropsProxy(source, factory, events) {
-  const box = reactive({ 0: source, 1: factory, 2: events });
-  const emit2 = ((event, payload) => {
-    const handler = box[2]?.[event];
-    if (typeof handler === "function")
-      handler(payload);
+    properties.add(property);
   });
-  return [
-    new Proxy(box, propsProxyHandler),
-    emit2,
-    box
-  ];
 }
-var hydrationCaptureProvider = null;
-function getHydrationCapture() {
-  return hydrationCaptureProvider?.() ?? null;
-}
-function registerHydrationHook(chunk, hook) {
-  const capture = getHydrationCapture();
-  if (!capture)
-    return;
-  const hooks = capture.hooks.get(chunk);
-  if (hooks) {
-    hooks.push(hook);
-  } else {
-    capture.hooks.set(chunk, [hook]);
-  }
-}
-function adoptCapturedChunk(capture, chunk, map, visited = /* @__PURE__ */ new WeakSet()) {
-  if (visited.has(chunk))
-    return;
-  visited.add(chunk);
-  const ref = chunk.ref;
-  if (ref.f)
-    ref.f = map.get(ref.f) ?? ref.f;
-  if (ref.l)
-    ref.l = map.get(ref.l) ?? ref.l;
-  capture.hooks.get(chunk)?.forEach((hook) => hook(map, visited));
-}
-
-// node_modules/@arrow-js/core/dist/index.mjs
-var eventBindingsKey = /* @__PURE__ */ Symbol();
-var bindingStackPos = -1;
-var bindingStack = [];
-var nodeStack = [];
-var delimiter = "\xA4";
-var delimiterComment = `<!--${delimiter}-->`;
-var initialChunkPoolSize = 1024;
-var chunkMemo = /* @__PURE__ */ new WeakMap();
-var chunkMemoByRef = /* @__PURE__ */ new WeakMap();
-var staleById = /* @__PURE__ */ new Map();
-var staleBySignature = /* @__PURE__ */ new Map();
-var chunkPoolHead;
-var renderedMark = 0;
-growChunkPool(initialChunkPoolSize);
-function moveDOMRef(ref, parent, before) {
-  let node = ref.f;
-  if (!parent || !node)
-    return;
-  const last = ref.l;
-  while (true) {
-    const next = node === last ? null : node.nextSibling;
-    parent.insertBefore(node, before || null);
-    if (!next)
-      return;
-    node = next;
-  }
-}
-function canSyncTemplateChunk(template, chunk) {
-  return chunk.g === getChunkProto(template).g;
-}
-function getChunkProto(template) {
-  const cached = template._p;
-  if (cached)
-    return cached;
-  return template._p = resolveChunkProto(template._s);
-}
-function resolveChunkProto(rawStrings, svg2) {
-  const doc = document;
-  let memoByRef = svg2 ? void 0 : chunkMemoByRef.get(rawStrings);
-  const cachedByRef = memoByRef?.get(doc);
-  if (cachedByRef)
-    return cachedByRef;
-  const signature = rawStrings.join(delimiterComment);
-  const cacheKey = svg2 ? `${delimiter}${signature}` : signature;
-  let signatureMemo = chunkMemo.get(doc);
-  if (!signatureMemo) {
-    signatureMemo = {};
-    chunkMemo.set(doc, signatureMemo);
-  }
-  const cached = signatureMemo[cacheKey];
-  if (cached) {
-    if (!svg2) {
-      memoByRef ??= /* @__PURE__ */ new WeakMap();
-      memoByRef.set(doc, cached);
-      chunkMemoByRef.set(rawStrings, memoByRef);
+function arrayOperation(op, arr, proxy, native) {
+  const synthetic = (...args) => {
+    const retVal = Array.prototype[op].call(arr, ...args);
+    arr.forEach((item, i) => proxy._em(String(i), item));
+    if (proxy._p) {
+      const [property, parent] = proxy._p;
+      parent._em(property, proxy);
     }
-    return cached;
-  }
-  const template = document.createElement("template");
-  if (svg2) {
-    template.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg">${signature}</svg>`;
-    const root = template.content.firstChild;
-    if (root) {
-      const content = template.content;
-      while (root.firstChild)
-        content.appendChild(root.firstChild);
-      content.removeChild(root);
-    }
-  } else {
-    template.innerHTML = signature;
-  }
-  const paths = createPaths(template.content);
-  normalizeNodePlaceholders(template.content);
-  const expressions = rawStrings.length - 1;
-  let count = 0;
-  for (let i = 0; i < paths[0].length; ) {
-    i += (paths[0][i + 1] ?? 0) + 3;
-    count++;
-  }
-  if (count !== expressions) {
-    throw Error("Invalid HTML position");
-  }
-  const created = {
-    template,
-    paths,
-    g: cacheKey,
-    expressions
+    return retVal;
   };
-  if (!svg2) {
-    memoByRef ??= /* @__PURE__ */ new WeakMap();
-    memoByRef.set(doc, created);
-    chunkMemoByRef.set(rawStrings, memoByRef);
-  }
-  signatureMemo[cacheKey] = created;
-  return created;
-}
-function syncTemplateToChunk(template, chunk, mounted = false) {
-  if (chunk._t === template) {
-    chunk.k = template._k;
-    chunk.i = template._i;
-    template._h = chunk;
-    template._m = mounted;
-    return;
-  }
-  if (chunk._t && chunk._t !== template) {
-    const current = chunk._t;
-    if (current._h === chunk) {
-      current._m = false;
-      current._h = void 0;
-    }
-  }
-  chunk._t = template;
-  chunk.k = template._k;
-  chunk.i = template._i;
-  template._h = chunk;
-  template._m = mounted;
-  writeExpressions(template._a, chunk.e);
-}
-function releaseTemplate(chunk) {
-  const template = chunk._t;
-  if (template._h === chunk) {
-    template._m = false;
-    template._h = void 0;
+  switch (op) {
+    case "shift":
+    case "pop":
+    case "sort":
+    case "reverse":
+    case "copyWithin":
+      return synthetic;
+    case "unshift":
+    case "push":
+    case "fill":
+      return (...args) => synthetic(...args.map((arg) => r(arg)));
+    case "splice":
+      return function(start, remove, ...inserts) {
+        return arguments.length === 1 ? synthetic(start) : synthetic(start, remove, ...inserts.map((arg) => r(arg)));
+      };
+    default:
+      return native;
   }
 }
-function growChunkPool(size) {
-  let head;
-  let tail;
-  for (let i = 0; i < size; i++) {
-    const chunk = {
-      paths: [[], []],
-      dom: null,
-      ref: { f: null, l: null },
-      _t: null,
-      e: -1,
-      g: "",
-      b: false,
-      r: true,
-      st: false,
-      u: null,
-      v: null,
-      s: void 0,
-      k: void 0,
-      i: void 0,
-      bkn: void 0,
-      next: void 0
-    };
-    if (tail)
-      tail.next = chunk;
-    else
-      head = chunk;
-    tail = chunk;
-  }
-  if (tail)
-    tail.next = chunkPoolHead;
-  chunkPoolHead = head;
-}
-function freeChunk(chunk) {
-  chunk.next = chunkPoolHead;
-  chunkPoolHead = chunk;
-}
-function configureChunk(chunk, proto, template) {
-  chunk.paths = proto.paths;
-  chunk.g = proto.g;
-  chunk.dom = proto.template.content.cloneNode(true);
-  chunk.ref.f = chunk.dom.firstChild;
-  chunk.ref.l = chunk.dom.lastChild;
-  chunk.e = createExpressionBlock(proto.expressions);
-  chunk.b = chunk.st = false;
-  chunk.r = true;
-  chunk.u = chunk.v = null;
-  chunk.s = chunk.bkn = void 0;
-  syncTemplateToChunk(template, chunk);
-}
-function acquireChunk(template) {
-  const proto = getChunkProto(template);
-  const exact = staleById.get(template._i);
-  if (exact) {
-    if (exact.g !== proto.g)
-      throw Error("shape mismatch");
-    if (exact.r) {
-      removeStaleChunk(exact);
-      syncTemplateToChunk(template, exact);
-      return exact;
-    }
-  }
-  const bucket = staleBySignature.get(proto.g);
-  const reused = bucket?.h;
-  if (reused) {
-    removeStaleChunk(reused);
-    syncTemplateToChunk(template, reused);
-    return reused;
-  }
-  if (!chunkPoolHead)
-    growChunkPool(initialChunkPoolSize);
-  const chunk = chunkPoolHead;
-  chunkPoolHead = chunk.next;
-  chunk.next = void 0;
-  configureChunk(chunk, proto, template);
-  return chunk;
-}
-function removeStaleChunk(chunk) {
-  if (!chunk.st)
-    return;
-  const bucket = staleBySignature.get(chunk.g);
-  if (bucket) {
-    let previous;
-    let current = bucket.h;
-    while (current && current !== chunk) {
-      previous = current;
-      current = current.bkn;
-    }
-    if (current) {
-      if (previous)
-        previous.bkn = current.bkn;
-      else
-        bucket.h = current.bkn;
-      if (!bucket.h)
-        staleBySignature.delete(chunk.g);
-    }
-  }
-  if (chunk.i !== void 0 && staleById.get(chunk.i) === chunk) {
-    staleById.delete(chunk.i);
-  }
-  chunk.st = false;
-  chunk.bkn = void 0;
-}
-function dispatchChunkEvent(evt) {
-  const binding = this[eventBindingsKey]?.[evt.type];
-  if (!binding)
-    return;
-  const chunk = binding.c;
-  if (!chunk._t._m)
-    return;
-  expressionPool[binding.p]?.(evt);
-}
-function getRenderableKey(renderable) {
-  return isCmp(renderable) ? renderable.k : renderable._k;
-}
-function html(strings, ...expSlots) {
-  const template = ((el) => renderTemplate(template, el));
-  template.isT = true;
-  template._a = expSlots;
-  template._c = ensureChunk;
-  template._m = false;
-  template._s = strings;
-  template.key = setTemplateKey;
-  template.id = setTemplateId;
-  return template;
-}
-function svg(strings, ...expSlots) {
-  const template = html(strings, ...expSlots);
-  template._p = resolveChunkProto(strings, true);
-  return template;
-}
-function ensureChunk() {
-  let chunk = this._h;
-  if (!chunk) {
-    chunk = acquireChunk(this);
-    this._h = chunk;
-  }
-  return chunk;
-}
-function setTemplateKey(key) {
-  this._k = key;
-  if (this._h)
-    this._h.k = key;
-  return this;
-}
-function setTemplateId(id) {
-  this._i = id;
-  if (this._h)
-    this._h.i = id;
-  return this;
-}
-function renderTemplate(template, el) {
-  const chunk = template._c();
-  if (!template._m) {
-    template._m = true;
-    if (!chunk.b) {
-      return createBindings(chunk, el);
-    }
-    moveDOMRef(chunk.ref, el ?? chunk.dom);
-    return el ?? chunk.dom;
-  }
-  moveDOMRef(chunk.ref, chunk.dom);
-  return el ? el.appendChild(chunk.dom) : chunk.dom;
-}
-function createBindings(chunk, el) {
-  const expressionPointer = chunk.e;
-  const totalPaths = expressionPool[expressionPointer];
-  const [pathTape, attrNames] = chunk.paths;
-  const stackStart = bindingStackPos + 1;
-  let tapePos = 0;
-  nodeStack[0] = chunk.dom;
-  for (let i = 0; i < totalPaths; i++) {
-    const sharedDepth = pathTape[tapePos++];
-    let remaining = pathTape[tapePos++];
-    let depth = sharedDepth;
-    let node = nodeStack[depth];
-    while (remaining--) {
-      node = node.childNodes[pathTape[tapePos++]];
-      nodeStack[++depth] = node;
-    }
-    bindingStack[++bindingStackPos] = node;
-    bindingStack[++bindingStackPos] = pathTape[tapePos++];
-  }
-  const stackEnd = bindingStackPos;
-  for (let s = stackStart, e = expressionPointer + 1; s < stackEnd; s++, e++) {
-    const node = bindingStack[s];
-    const segment = bindingStack[++s];
-    if (segment)
-      createAttrBinding(node, attrNames[segment - 1], e, chunk);
-    else
-      createNodeBinding(node, e, chunk);
-  }
-  bindingStack.length = stackStart;
-  bindingStackPos = stackStart - 1;
-  chunk.b = true;
-  return el ? el.appendChild(chunk.dom) && el : chunk.dom;
-}
-function createNodeBinding(node, expressionPointer, parentChunk) {
-  let fragment;
-  const expression = expressionPool[expressionPointer];
-  const capture = getHydrationCapture();
-  const textNode = node.nodeType === 3 ? node : null;
-  if (isCmp(expression) || isTpl(expression) || Array.isArray(expression)) {
-    parentChunk.r = false;
-    const render = createRenderFn(capture);
-    fragment = render(expression);
-    if (capture) {
-      registerHydrationHook(parentChunk, (map, visited) => {
-        render.adopt(map, visited);
+function reactiveMerge(reactiveTarget, reactiveSource) {
+  const state = reactiveSource._st();
+  if (state.o) {
+    state.o.forEach((callbacks, property) => {
+      callbacks.forEach((c) => {
+        reactiveTarget.$on(property, c);
       });
-    }
-  } else if (typeof expression === "function") {
-    let target = textNode;
-    let render = null;
-    const [frag, stop] = watch(expressionPointer, (value) => {
-      if (!render) {
-        if (isCmp(value) || isTpl(value) || Array.isArray(value)) {
-          parentChunk.r = false;
-          render = createRenderFn(capture);
-          const next2 = render(value);
-          if (target) {
-            target.parentNode?.replaceChild(next2, target);
-            target = null;
-          }
-          return next2;
-        }
-        if (!target)
-          target = document.createTextNode("");
-        const next = renderText(value);
-        if (target.nodeValue !== next)
-          target.nodeValue = next;
-        return target;
-      }
-      return render(value);
     });
-    (parentChunk.u ??= []).push(stop);
-    fragment = frag;
-    if (capture) {
-      registerHydrationHook(parentChunk, (map, visited) => {
-        if (target) {
-          const adopted = map.get(target);
-          if (adopted)
-            target = adopted;
-        }
-        render?.adopt(map, visited);
-      });
-    }
-  } else {
-    let target = textNode ?? document.createTextNode("");
-    target.data = renderText(expression);
-    fragment = target;
-    if (capture) {
-      onExpressionUpdate(expressionPointer, (value) => target.data = renderText(value));
-      registerHydrationHook(parentChunk, (map) => {
-        const adopted = map.get(target);
-        if (adopted)
-          target = adopted;
-      });
-    } else {
-      onExpressionUpdate(expressionPointer, target);
-    }
   }
-  if (node === parentChunk.ref.f || node === parentChunk.ref.l) {
-    const last = fragment.nodeType === 11 ? fragment.lastChild : fragment;
-    if (node === parentChunk.ref.f) {
-      parentChunk.ref.f = fragment.nodeType === 11 ? fragment.firstChild : fragment;
-    }
-    if (node === parentChunk.ref.l)
-      parentChunk.ref.l = last;
+  if (state.p) {
+    reactiveTarget._p = state.p;
   }
-  if (fragment !== node)
-    node.parentNode?.replaceChild(fragment, node);
+  return reactiveTarget;
 }
-function createAttrBinding(node, attrName, expressionPointer, parentChunk) {
-  if (node.nodeType !== 1)
-    return;
-  let target = node;
-  const expression = expressionPool[expressionPointer];
-  const capture = getHydrationCapture();
-  if (attrName[0] === "@") {
-    const event = attrName.slice(1);
-    const bindings = target[eventBindingsKey] ??= {};
-    bindings[event] = { c: parentChunk, p: expressionPointer };
-    const record = [target, event];
-    target.addEventListener(event, dispatchChunkEvent);
-    target.removeAttribute(attrName);
-    (parentChunk.v ??= []).push(record);
-    if (capture) {
-      registerHydrationHook(parentChunk, (map) => {
-        const adopted = map.get(target);
-        if (!adopted)
-          return;
-        const previousTarget = target;
-        const previousBindings = previousTarget[eventBindingsKey];
-        if (previousBindings) {
-          delete previousBindings[event];
-          let hasBindings = false;
-          for (const key in previousBindings) {
-            hasBindings = true;
-            break;
-          }
-          if (!hasBindings)
-            delete previousTarget[eventBindingsKey];
-        }
-        target.removeEventListener(event, dispatchChunkEvent);
-        target = adopted;
-        record[0] = target;
-        const nextBindings = target[eventBindingsKey] ??= {};
-        nextBindings[event] = { c: parentChunk, p: expressionPointer };
-        target.addEventListener(event, dispatchChunkEvent);
-        target.removeAttribute(attrName);
-      });
-    }
-  } else if (typeof expression === "function" && !isTpl(expression)) {
-    const [, stop] = watch(expressionPointer, (value) => setAttr(target, attrName, value));
-    (parentChunk.u ??= []).push(stop);
-    if (capture) {
-      registerHydrationHook(parentChunk, (map) => {
-        const adopted = map.get(target);
-        if (adopted)
-          target = adopted;
-      });
-    }
-  } else {
-    setAttr(target, attrName, expression);
-    if (capture) {
-      onExpressionUpdate(expressionPointer, (value) => setAttr(target, attrName, value));
-    } else {
-      onExpressionUpdate(expressionPointer, target, attrName);
-    }
+function w(fn, after) {
+  const trackingId = /* @__PURE__ */ Symbol();
+  if (!dependencyCollector.has(trackingId)) {
+    dependencyCollector.set(trackingId, /* @__PURE__ */ new Map());
   }
+  let currentDeps = /* @__PURE__ */ new Map();
+  const queuedCallFn = queue(callFn);
+  function callFn() {
+    dependencyCollector.set(trackingId, /* @__PURE__ */ new Map());
+    const value = fn();
+    const newDeps = dependencyCollector.get(trackingId);
+    dependencyCollector.delete(trackingId);
+    currentDeps.forEach((propertiesToUnobserve, proxy) => {
+      const newProperties = newDeps.get(proxy);
+      if (newProperties) {
+        newProperties.forEach((prop) => propertiesToUnobserve.delete(prop));
+      }
+      propertiesToUnobserve.forEach((prop) => proxy.$off(prop, queuedCallFn));
+    });
+    newDeps.forEach((properties, proxy) => {
+      properties.forEach((prop) => proxy.$on(prop, queuedCallFn));
+    });
+    currentDeps = newDeps;
+    return after ? after(value) : value;
+  }
+  if (isReactiveFunction(fn))
+    fn.$on(callFn);
+  return callFn();
 }
-function createRenderFn(capture) {
-  let previous;
-  let keyedChunks = /* @__PURE__ */ Object.create(null);
-  const render = function render2(renderable) {
-    if (!previous) {
-      if (isCmp(renderable)) {
-        const [fragment, chunk] = renderComponent(renderable);
-        previous = mountChunkFragment(fragment, chunk);
-        return fragment;
-      }
-      if (isTpl(renderable)) {
-        const fragment = renderable();
-        previous = mountChunkFragment(fragment, renderable._h);
-        return fragment;
-      }
-      if (Array.isArray(renderable)) {
-        const [fragment, rendered] = renderList(renderable);
-        previous = rendered;
-        return fragment;
-      }
-      return previous = document.createTextNode(renderText(renderable));
+var listeners = /* @__PURE__ */ new WeakMap();
+var templateMemo = {};
+var delimiter = "\u27B3\u274D";
+var bookend = "\u274D\u21DA";
+var delimiterComment = `<!--${delimiter}-->`;
+var bookendComment = `<!--${bookend}-->`;
+function t(strings, ...expSlots) {
+  const expressions = [];
+  let str = "";
+  const addExpressions = (expression, html2) => {
+    if (typeof expression === "function") {
+      let observer = () => {
+      };
+      expressions.push(Object.assign((...args) => expression(...args), {
+        e: expression,
+        $on: (obs) => {
+          observer = obs;
+        },
+        _up: (exp) => {
+          expression = exp;
+          observer();
+        }
+      }));
+      return html2 + delimiterComment;
     }
-    if (Array.isArray(renderable)) {
-      if (!Array.isArray(previous)) {
-        const [fragment, nextList] = renderList(renderable);
-        getNode(previous).after(fragment);
-        forgetChunk(previous);
-        unmount(previous);
-        previous = nextList;
+    if (Array.isArray(expression)) {
+      return expression.reduce((html3, exp) => addExpressions(exp, html3), html2);
+    }
+    return html2 + expression;
+  };
+  const toString = () => {
+    if (!str) {
+      if (!expSlots.length && strings.length === 1 && strings[0] === "") {
+        str = "<!---->";
       } else {
-        let i = 0;
-        const renderableLength = renderable.length;
-        const previousLength = previous.length;
-        if (renderableLength && previousLength === 1 && !isChunk(previous[0]) && !previous[0].data) {
-          const [fragment, rendered] = renderList(renderable);
-          previous[0].replaceWith(fragment);
-          previous = rendered;
-          return;
-        }
-        if (renderableLength === previousLength) {
-          const renderedList2 = new Array(renderableLength);
-          for (; i < renderableLength; i++) {
-            const item = renderable[i];
-            if (isCmp(item) && item.k !== void 0 || isTpl(item) && item._k !== void 0) {
-              i = -1;
-              break;
-            }
-            const prev = previous[i];
-            if (isTpl(item) && isChunk(prev) && prev._t === item && item._h === prev && item._m) {
-              renderedList2[i] = prev;
-              continue;
-            }
-            if (isTpl(item) && isChunk(prev)) {
-              const template = item;
-              const proto = template._p ?? getChunkProto(template);
-              if (prev.g === proto.g) {
-                syncTemplateToChunk(template, prev, true);
-                renderedList2[i] = prev;
-                continue;
-              }
-            }
-            renderedList2[i] = patch(item, prev);
-          }
-          if (i === renderableLength) {
-            previous = renderedList2;
-            return;
-          }
-          i = 0;
-        }
-        const keyedList = patchKeyedList(renderable, previous);
-        if (keyedList) {
-          previous = keyedList;
-          return;
-        }
-        if (renderableLength > previousLength && previousLength) {
-          for (; i < previousLength; i++) {
-            const item = renderable[i];
-            const prev = previous[i];
-            if (isTpl(item) && isChunk(prev) && prev._t === item && item._h === prev && item._m) {
-              continue;
-            }
-            i = -1;
-            break;
-          }
-          if (i === previousLength) {
-            const fragment = document.createDocumentFragment();
-            const renderedList2 = previous.slice();
-            for (i = previousLength; i < renderableLength; i++) {
-              renderedList2[i] = mountItem(renderable[i], fragment);
-            }
-            getNode(previous[previousLength - 1]).after(fragment);
-            previous = renderedList2;
-            return;
-          }
-          i = 0;
-        }
-        let anchor;
-        const renderedList = [];
-        const mark = ++renderedMark;
-        const updaterFrag = renderableLength > previousLength ? document.createDocumentFragment() : null;
-        for (; i < renderableLength; i++) {
-          let item = renderable[i];
-          const prev = previous[i];
-          let key;
-          if (isTpl(item) && (key = item._k) !== void 0 && key in keyedChunks) {
-            const keyedChunk = keyedChunks[key];
-            if (canSyncTemplateChunk(item, keyedChunk)) {
-              syncTemplateToChunk(item, keyedChunk, true);
-              item = keyedChunk._t;
-            }
-          }
-          if (i > previousLength - 1) {
-            renderedList[i] = mountItem(item, updaterFrag);
-            continue;
-          }
-          if (isTpl(item) && isChunk(prev) && prev._t === item && item._h === prev && item._m) {
-            anchor = getNode(prev);
-            renderedList[i] = prev;
-            prev.mk = mark;
-            continue;
-          }
-          const used = patch(item, prev, anchor);
-          anchor = getNode(used);
-          renderedList[i] = used;
-          used.mk = mark;
-        }
-        if (!renderableLength) {
-          const placeholder = renderedList[0] = document.createTextNode("");
-          const sync = canSyncUnmount(previous);
-          const detached = sync && replaceListWithPlaceholder(previous, placeholder);
-          if (!detached)
-            getNode(previous).after(placeholder);
-          keyedChunks = /* @__PURE__ */ Object.create(null);
-          if (sync)
-            removeUnmounted(previous, detached);
-          else
-            unmount(previous);
-          previous = renderedList;
-          return;
-        } else if (renderableLength > previousLength) {
-          anchor?.after(updaterFrag);
-        }
-        for (i = 0; i < previousLength; i++) {
-          const stale = previous[i];
-          if (stale.mk === mark)
-            continue;
-          forgetChunk(stale);
-          unmount(stale);
-        }
-        previous = renderedList;
+        str = strings.reduce(function interlaceTemplate(html2, strVal, i) {
+          html2 += strVal;
+          return expSlots[i] !== void 0 ? addExpressions(expSlots[i], html2) : html2;
+        }, "");
       }
-    } else {
-      if (Array.isArray(previous))
-        keyedChunks = /* @__PURE__ */ Object.create(null);
-      previous = patch(renderable, previous);
     }
+    return str;
   };
-  render.adopt = capture ? (map, visited) => {
-    previous = adoptRenderedValue(previous, capture, map, visited);
-  } : () => {
+  const template = (el) => {
+    const dom = createNodes(toString());
+    const frag = fragment(dom, { i: 0, e: expressions });
+    return el ? frag(el) : frag();
   };
-  function renderList(renderable) {
-    const fragment = document.createDocumentFragment();
-    if (!renderable.length) {
-      const placeholder = document.createTextNode("");
-      fragment.appendChild(placeholder);
-      return [fragment, [placeholder]];
-    }
-    const renderedItems = new Array(renderable.length);
-    for (let i = 0; i < renderable.length; i++) {
-      renderedItems[i] = mountItem(renderable[i], fragment);
-    }
-    return [fragment, renderedItems];
-  }
-  function syncComponentChunk(renderable, chunk) {
-    if (chunk.s?.[1] !== renderable.h)
-      return false;
-    if (chunk.s[0] !== renderable.p)
-      chunk.s[0] = renderable.p;
-    if (chunk.s[2] !== renderable.e)
-      chunk.s[2] = renderable.e;
-    return true;
-  }
-  function syncKeyedRenderable(renderable, chunk) {
-    if (isCmp(renderable))
-      return syncComponentChunk(renderable, chunk);
-    if (!canSyncTemplateChunk(renderable, chunk))
-      return false;
-    syncTemplateToChunk(renderable, chunk, true);
-    return true;
-  }
-  function moveChunkIntoPlace(chunk, prev, anchor) {
-    if (anchor) {
-      moveDOMRef(chunk.ref, anchor.parentNode, anchor.nextSibling);
-      return;
-    }
-    const target = getNode(prev, void 0, true);
-    moveDOMRef(chunk.ref, target.parentNode, target);
-  }
-  function patchKeyedList(renderable, previousList) {
-    const renderableLength = renderable.length;
-    const previousLength = previousList.length;
-    if (!renderableLength) {
-      const placeholder = document.createTextNode("");
-      const sync = canSyncUnmount(previousList);
-      const detached = sync && replaceListWithPlaceholder(previousList, placeholder);
-      if (!detached)
-        getNode(previousList).after(placeholder);
-      keyedChunks = /* @__PURE__ */ Object.create(null);
-      if (sync)
-        removeUnmounted(previousList, detached);
-      else
-        unmount(previousList);
-      return [placeholder];
-    }
-    const renderedList = new Array(renderableLength);
-    const parent = getNode(previousList[0]).parentNode;
-    if (!parent)
-      return null;
-    let sharedPrefix = 0;
-    const sharedPrefixKeys = /* @__PURE__ */ Object.create(null);
-    for (; sharedPrefix < previousLength && sharedPrefix < renderableLength; sharedPrefix++) {
-      const rendered = previousList[sharedPrefix];
-      if (!isChunk(rendered) || rendered.k === void 0)
-        return null;
-      const item = renderable[sharedPrefix];
-      if (!isCmp(item) && !isTpl(item))
-        return null;
-      const key = getRenderableKey(item);
-      if (key === void 0 || key !== rendered.k)
-        break;
-      sharedPrefixKeys[key] = 1;
-      if (!(isTpl(item) && rendered._t === item && item._h === rendered && item._m) && !syncKeyedRenderable(item, rendered)) {
-        return null;
-      }
-      renderedList[sharedPrefix] = rendered;
-    }
-    if (sharedPrefix === previousLength) {
-      if (sharedPrefix === renderableLength)
-        return renderedList;
-      const fragment = document.createDocumentFragment();
-      for (let i = sharedPrefix; i < renderableLength; i++) {
-        const item = renderable[i];
-        if (!isCmp(item) && !isTpl(item))
-          return null;
-        const key = getRenderableKey(item);
-        if (key === void 0 || key in sharedPrefixKeys)
-          return null;
-        sharedPrefixKeys[key] = 1;
-        renderedList[i] = mountItem(item, fragment);
-      }
-      parent.insertBefore(fragment, previousLength ? getNode(previousList[previousLength - 1]).nextSibling : null);
-      return renderedList;
-    }
-    if (sharedPrefix === renderableLength) {
-      for (let i = sharedPrefix; i < previousLength; i++) {
-        const stale = previousList[i];
-        forgetChunk(stale);
-        unmount(stale);
-      }
-      return renderedList;
-    }
-    let oldStart = sharedPrefix;
-    let newStart = sharedPrefix;
-    let oldEnd = previousLength - 1;
-    let newEnd = renderableLength - 1;
-    while (oldStart <= oldEnd && newStart <= newEnd) {
-      const startChunk = previousList[oldStart];
-      const endChunk = previousList[oldEnd];
-      const startKey = startChunk.k;
-      const endKey = endChunk.k;
-      const nextStart = renderable[newStart];
-      const nextEnd = renderable[newEnd];
-      const nextStartKey = isCmp(nextStart) || isTpl(nextStart) ? getRenderableKey(nextStart) : void 0;
-      const nextEndKey = isCmp(nextEnd) || isTpl(nextEnd) ? getRenderableKey(nextEnd) : void 0;
-      if (nextStartKey === void 0 || nextEndKey === void 0)
-        return null;
-      if (startKey === nextStartKey) {
-        if (!(isTpl(nextStart) && startChunk._t === nextStart && nextStart._h === startChunk && nextStart._m) && !syncKeyedRenderable(nextStart, startChunk)) {
-          return null;
-        }
-        renderedList[newStart++] = startChunk;
-        oldStart++;
-        continue;
-      }
-      if (endKey === nextEndKey) {
-        if (!(isTpl(nextEnd) && endChunk._t === nextEnd && nextEnd._h === endChunk && nextEnd._m) && !syncKeyedRenderable(nextEnd, endChunk)) {
-          return null;
-        }
-        renderedList[newEnd--] = endChunk;
-        oldEnd--;
-        continue;
-      }
-      if (startKey === nextEndKey) {
-        if (!(isTpl(nextEnd) && startChunk._t === nextEnd && nextEnd._h === startChunk && nextEnd._m) && !syncKeyedRenderable(nextEnd, startChunk)) {
-          return null;
-        }
-        moveDOMRef(startChunk.ref, parent, getNode(endChunk).nextSibling);
-        renderedList[newEnd--] = startChunk;
-        oldStart++;
-        continue;
-      }
-      if (endKey === nextStartKey) {
-        if (!(isTpl(nextStart) && endChunk._t === nextStart && nextStart._h === endChunk && nextStart._m) && !syncKeyedRenderable(nextStart, endChunk)) {
-          return null;
-        }
-        moveDOMRef(endChunk.ref, parent, getNode(startChunk, void 0, true));
-        renderedList[newStart++] = endChunk;
-        oldEnd--;
-        continue;
-      }
-      break;
-    }
-    if (newStart > newEnd) {
-      for (let i = oldStart; i <= oldEnd; i++) {
-        const stale = previousList[i];
-        forgetChunk(stale);
-        unmount(stale);
-      }
-      return renderedList;
-    }
-    if (oldStart > oldEnd) {
-      const fragment = document.createDocumentFragment();
-      for (let i = newStart; i <= newEnd; i++) {
-        const item = renderable[i];
-        if (!isCmp(item) && !isTpl(item))
-          return null;
-        renderedList[i] = mountItem(item, fragment);
-      }
-      parent.insertBefore(fragment, newEnd + 1 < renderableLength ? getNode(renderedList[newEnd + 1], void 0, true) : null);
-      return renderedList;
-    }
-    const previousIndexByKey = /* @__PURE__ */ Object.create(null);
-    for (let i = oldStart; i <= oldEnd; i++) {
-      const rendered = previousList[i];
-      if (!isChunk(rendered) || rendered.k === void 0)
-        return null;
-      const key = rendered.k;
-      if (key in previousIndexByKey)
-        return null;
-      previousIndexByKey[key] = i + 1;
-    }
-    const middleIndexByKey = /* @__PURE__ */ Object.create(null);
-    let overlaps = 0;
-    for (let i = newStart; i <= newEnd; i++) {
-      const item = renderable[i];
-      const key = isCmp(item) || isTpl(item) ? getRenderableKey(item) : void 0;
-      if (key === void 0 || key in middleIndexByKey)
-        return null;
-      middleIndexByKey[key] = i + 1;
-      if (key in previousIndexByKey)
-        overlaps++;
-    }
-    if (!overlaps) {
-      const first = getNode(previousList[oldStart], void 0, true);
-      const last = getNode(previousList[oldEnd]);
-      const fragment = document.createDocumentFragment();
-      for (let i = newStart; i <= newEnd; i++) {
-        const item = renderable[i];
-        if (!isCmp(item) && !isTpl(item))
-          return null;
-        renderedList[i] = mountItem(item, fragment);
-      }
-      const parent2 = first.parentNode;
-      if (parent2 && first === parent2.firstChild && last === parent2.lastChild) {
-        parent2.replaceChildren(fragment);
-      } else {
-        const range = document.createRange();
-        range.setStartBefore(first);
-        range.setEndAfter(last);
-        range.deleteContents();
-        range.insertNode(fragment);
-      }
-      for (let i = oldStart; i <= oldEnd; i++) {
-        const stale = previousList[i];
-        forgetChunk(stale);
-        destroyChunk(stale, true);
-      }
-      return renderedList;
-    }
-    for (let i = oldStart; i <= oldEnd; i++) {
-      const stale = previousList[i];
-      const nextIndex = middleIndexByKey[stale.k];
-      if (nextIndex === void 0) {
-        forgetChunk(stale);
-        unmount(stale);
-        continue;
-      }
-      const item = renderable[nextIndex - 1];
-      if (!syncKeyedRenderable(item, stale))
-        return null;
-      renderedList[nextIndex - 1] = stale;
-    }
-    let before = newEnd + 1 < renderableLength ? getNode(renderedList[newEnd + 1], void 0, true) : getNode(previousList[previousLength - 1]).nextSibling;
-    for (let i = newEnd; i >= newStart; i--) {
-      const existing = renderedList[i];
-      if (!existing) {
-        const item = renderable[i];
-        if (!isCmp(item) && !isTpl(item))
-          return null;
-        const fragment = document.createDocumentFragment();
-        const mounted = mountItem(item, fragment);
-        renderedList[i] = mounted;
-        parent.insertBefore(fragment, before);
-        before = getNode(mounted, void 0, true);
-        continue;
-      }
-      const start = getNode(existing, void 0, true);
-      if (start.parentNode !== parent || start.nextSibling !== before) {
-        moveDOMRef(existing.ref, parent, before);
-      }
-      before = start;
-    }
-    return renderedList;
-  }
-  function patch(renderable, prev, anchor) {
-    const nodeType = prev.nodeType ?? 0;
-    if (isCmp(renderable)) {
-      const key = renderable.k;
-      if (key !== void 0 && key in keyedChunks) {
-        const keyedChunk = keyedChunks[key];
-        if (syncComponentChunk(renderable, keyedChunk)) {
-          if (keyedChunk === prev)
-            return prev;
-          moveChunkIntoPlace(keyedChunk, prev, anchor);
-          return keyedChunk;
-        }
-      } else if (isChunk(prev) && syncComponentChunk(renderable, prev)) {
-        if (prev.k !== renderable.k) {
-          forgetChunk(prev);
-          prev.k = renderable.k;
-          rememberKeyedChunk(prev);
-        }
-        return prev;
-      }
-      const [fragment, chunk] = renderComponent(renderable);
-      const mounted = mountChunkFragment(fragment, chunk);
-      getNode(prev, anchor).after(fragment);
-      forgetChunk(prev);
-      unmount(prev);
-      rememberKeyedChunk(chunk);
-      return mounted;
-    }
-    if (!isTpl(renderable) && nodeType === 3) {
-      const value = renderText(renderable);
-      if (prev.data !== value)
-        prev.data = value;
-      return prev;
-    }
-    if (isTpl(renderable)) {
-      const template = renderable;
-      const key = template._k;
-      if (key !== void 0 && key in keyedChunks) {
-        const keyedChunk = keyedChunks[key];
-        if (canSyncTemplateChunk(template, keyedChunk)) {
-          syncTemplateToChunk(template, keyedChunk, true);
-          if (keyedChunk === prev)
-            return prev;
-          moveChunkIntoPlace(keyedChunk, prev, anchor);
-          return keyedChunk;
-        }
-      }
-      const proto = getChunkProto(template);
-      if (isChunk(prev) && prev.g === proto.g) {
-        syncTemplateToChunk(template, prev, true);
-        return prev;
-      }
-      const fragment = renderable();
-      const chunk = template._h;
-      const mounted = mountChunkFragment(fragment, chunk);
-      getNode(prev, anchor).after(fragment);
-      forgetChunk(prev);
-      unmount(prev);
-      rememberKeyedChunk(chunk);
-      return mounted;
-    }
-    const text = document.createTextNode(renderText(renderable));
-    getNode(prev, anchor).after(text);
-    forgetChunk(prev);
-    unmount(prev);
-    return text;
-  }
-  function mountItem(item, fragment) {
-    if (isCmp(item)) {
-      const [inner, chunk] = renderComponent(item);
-      fragment.appendChild(inner);
-      rememberKeyedChunk(chunk);
-      return mountChunkFragment(fragment, chunk);
-    }
-    if (isTpl(item)) {
-      item(fragment);
-      const chunk = item._h;
-      rememberKeyedChunk(chunk);
-      return mountChunkFragment(fragment, chunk);
-    }
-    const node = document.createTextNode(renderText(item));
-    fragment.appendChild(node);
-    return node;
-  }
-  function mountChunkFragment(fragment, chunk) {
-    if (chunk.ref.f)
-      return chunk;
-    const placeholder = document.createTextNode("");
-    fragment.appendChild(placeholder);
-    return placeholder;
-  }
-  function rememberKeyedChunk(chunk) {
-    if (chunk.k !== void 0)
-      keyedChunks[chunk.k] = chunk;
-  }
-  function forgetChunk(item) {
-    if (isChunk(item) && item.k !== void 0 && keyedChunks[item.k] === item) {
-      delete keyedChunks[item.k];
-    }
-  }
-  function renderComponent(renderable) {
-    const [props, emit2, box] = createPropsProxy(renderable.p, renderable.h, renderable.e);
-    const cleanups = [];
-    const previousCollector = swapCleanupCollector(cleanups);
-    let template;
-    let fragment;
-    try {
-      template = renderable.h(props, emit2);
-      fragment = template();
-    } finally {
-      swapCleanupCollector(previousCollector);
-    }
-    const chunk = template._c();
-    if (cleanups.length) {
-      (chunk.u ??= []).push(...cleanups);
-    }
-    chunk.r = false;
-    chunk.s = box;
-    chunk.k = renderable.k;
-    return [fragment, chunk];
-  }
-  return render;
-}
-var unmountStack = [];
-function destroyChunk(chunk, detached = false) {
-  if (chunk.st)
-    removeStaleChunk(chunk);
-  releaseTemplate(chunk);
-  if (chunk.v) {
-    for (let i = 0; i < chunk.v.length; i++) {
-      const [target, event] = chunk.v[i];
-      const bindings = target[eventBindingsKey];
-      if (bindings) {
-        delete bindings[event];
-        let hasBindings = false;
-        for (const key in bindings) {
-          hasBindings = true;
-          break;
-        }
-        if (!hasBindings)
-          delete target[eventBindingsKey];
-      }
-      target.removeEventListener(event, dispatchChunkEvent);
-    }
-  }
-  if (chunk.u) {
-    for (let i = 0; i < chunk.u.length; i++)
-      chunk.u[i]();
-    chunk.u = null;
-  }
-  if (chunk.e + 1) {
-    releaseExpressions(chunk.e);
-    chunk.e = -1;
-  }
-  let node = chunk.ref.f;
-  if (!detached && node) {
-    const last = chunk.ref.l;
-    if (node === last)
-      node.remove();
-    else {
-      while (node) {
-        const next = node === last ? null : node.nextSibling;
-        node.remove();
-        if (!next)
-          break;
-        node = next;
-      }
-    }
-  }
-  chunk.dom.textContent = "";
-  chunk.ref.f = chunk.ref.l = null;
-  chunk.k = chunk.i = chunk.s = void 0;
-  chunk.u = chunk.v = null;
-  chunk.b = chunk.st = false;
-  chunk.r = true;
-  chunk.g = "";
-  freeChunk(chunk);
-}
-function recycleChunk(chunk, detached = false) {
-  if (!detached)
-    moveDOMRef(chunk.ref, chunk.dom);
-  releaseTemplate(chunk);
-  if (chunk.st || !chunk.r)
-    return;
-  chunk.st = true;
-  let bucket = staleBySignature.get(chunk.g);
-  if (!bucket) {
-    bucket = {};
-    staleBySignature.set(chunk.g, bucket);
-  }
-  chunk.bkn = bucket.h;
-  bucket.h = chunk;
-  if (chunk.i !== void 0)
-    staleById.set(chunk.i, chunk);
-}
-var unmountQueued = false;
-function canSyncUnmount(chunk) {
-  for (let i = 0; i < chunk.length; i++) {
-    const item = chunk[i];
-    if (isChunk(item) && !item.r)
-      return false;
-  }
-  return true;
-}
-function replaceListWithPlaceholder(chunk, placeholder) {
-  if (!chunk.length)
-    return false;
-  const first = getNode(chunk[0], void 0, true);
-  const last = getNode(chunk[chunk.length - 1]);
-  const parent = first.parentNode;
-  if (!parent || first !== parent.firstChild || last !== parent.lastChild) {
-    return false;
-  }
-  parent.replaceChildren(placeholder);
-  return true;
-}
-function removeUnmounted(chunk, detached = false) {
-  if (isChunk(chunk)) {
-    if (chunk.r)
-      recycleChunk(chunk, detached);
-    else
-      destroyChunk(chunk, detached);
-    return;
-  }
-  if (Array.isArray(chunk)) {
-    if (!detached && chunk.length) {
-      const first = getNode(chunk[0], void 0, true);
-      const last = getNode(chunk[chunk.length - 1]);
-      const parent = first.parentNode;
-      if (parent) {
-        if (first === parent.firstChild && last === parent.lastChild) {
-          parent.textContent = "";
-        } else {
-          const range = document.createRange();
-          range.setStartBefore(first);
-          range.setEndAfter(last);
-          range.deleteContents();
-        }
-        detached = true;
-      }
-    }
-    let bucket;
-    let signature = "";
-    for (let i = 0; i < chunk.length; i++) {
-      const item = chunk[i];
-      if (isChunk(item)) {
-        if (!item.r) {
-          destroyChunk(item, detached);
-          continue;
-        }
-        if (!detached)
-          moveDOMRef(item.ref, item.dom);
-        releaseTemplate(item);
-        if (item.st)
-          continue;
-        item.st = true;
-        if (signature !== item.g) {
-          signature = item.g;
-          bucket = staleBySignature.get(signature);
-          if (!bucket) {
-            bucket = {};
-            staleBySignature.set(signature, bucket);
-          }
-        }
-        item.bkn = bucket.h;
-        bucket.h = item;
-        if (item.i !== void 0)
-          staleById.set(item.i, item);
-      } else if (!detached) {
-        item.remove();
-      }
-    }
-    return;
-  }
-  if (!detached)
-    chunk.remove();
-}
-function drainUnmountStack() {
-  unmountQueued = false;
-  const stack = unmountStack;
-  unmountStack = [];
-  for (let i = 0; i < stack.length; i++)
-    removeUnmounted(stack[i]);
-  if (unmountStack.length)
-    scheduleUnmountDrain();
-}
-function scheduleUnmountDrain() {
-  if (unmountQueued)
-    return;
-  unmountQueued = true;
-  queueMicrotask(drainUnmountStack);
-}
-function unmount(chunk) {
-  if (!chunk)
-    return;
-  unmountStack.push(chunk);
-  scheduleUnmountDrain();
-}
-function renderText(value) {
-  return value || value === 0 ? value : "";
-}
-function getNode(chunk, anchor, first) {
-  if (isChunk(chunk)) {
-    return first ? chunk.ref.f : chunk.ref.l;
-  }
-  if (Array.isArray(chunk)) {
-    return getNode(chunk[first ? 0 : chunk.length - 1], anchor, first);
-  }
-  return chunk;
-}
-function adoptRenderedValue(value, capture, map, visited) {
-  if (!value)
-    return value;
-  if (isChunk(value)) {
-    adoptCapturedChunk(capture, value, map, visited);
-    return value;
-  }
-  if (Array.isArray(value)) {
-    const next = new Array(value.length);
-    for (let i = 0; i < value.length; i++) {
-      next[i] = adoptRenderedValue(value[i], capture, map, visited);
-    }
-    return next;
-  }
-  return map.get(value) ?? value;
-}
-function createPaths(dom) {
-  const pathTape = [];
-  const attrNames = [];
-  const path = [];
-  const previous = [];
-  const pushPath = (attrName) => {
-    const pathLen = path.length;
-    const previousLen = previous.length;
-    const limit = pathLen < previousLen ? pathLen : previousLen;
-    let sharedDepth = 0;
-    while (sharedDepth < limit && previous[sharedDepth] === path[sharedDepth]) {
-      sharedDepth++;
-    }
-    pathTape.push(sharedDepth, pathLen - sharedDepth);
-    for (let i = sharedDepth; i < pathLen; i++)
-      pathTape.push(path[i]);
-    pathTape.push(attrName ? attrNames.push(attrName) : 0);
-    previous.length = pathLen;
-    for (let i = 0; i < pathLen; i++)
-      previous[i] = path[i];
+  template.isT = true;
+  template._k = 0;
+  template._h = () => [toString(), expressions, template._k];
+  template.key = (key) => {
+    template._k = key;
+    return template;
   };
-  const walk = (node) => {
-    if (node.nodeType === 1) {
-      const attrs = node.attributes;
-      for (let i = 0; i < attrs.length; i++) {
-        const attr = attrs[i];
-        if (attr.value === delimiterComment)
-          pushPath(attr.name);
-      }
-    } else if (node.nodeType === 8) {
-      pushPath();
-    } else if (node.nodeType === 3 && node.nodeValue === delimiterComment) {
-      pushPath();
-    }
-    const children2 = node.childNodes;
-    for (let i = 0; i < children2.length; i++) {
-      path.push(i);
-      walk(children2[i]);
-      path.pop();
-    }
-  };
+  return template;
+}
+function fragment(dom, expressions) {
+  let node;
+  let i = 0;
   const children = dom.childNodes;
-  for (let i = 0; i < children.length; i++) {
-    path.push(i);
-    walk(children[i]);
-    path.pop();
-  }
-  return [pathTape, attrNames];
-}
-function normalizeNodePlaceholders(dom) {
-  const walk = (node) => {
-    const children = node.childNodes;
-    for (let i = 0; i < children.length; i++) {
-      const child = children[i];
-      if (child.nodeType === 8 && child.data === delimiter) {
-        node.replaceChild(document.createTextNode(""), child);
-        continue;
-      }
-      if (child.nodeType === 3 && child.nodeValue === delimiterComment) {
-        child.nodeValue = "";
-      }
-      if (child.firstChild)
-        walk(child);
+  while (node = children.item(i++)) {
+    if (node.nodeType === 8 && node.nodeValue === delimiter) {
+      comment(node, expressions);
+      continue;
     }
-  };
-  walk(dom);
+    if (node instanceof Element)
+      attrs(node, expressions);
+    if (node.hasChildNodes()) {
+      fragment(node, expressions);
+    }
+    if (node instanceof HTMLOptionElement)
+      node.selected = node.defaultSelected;
+  }
+  return ((parent) => {
+    if (parent) {
+      parent.appendChild(dom);
+      return parent;
+    }
+    return dom;
+  });
 }
+function attrs(node, expressions) {
+  var _a;
+  const toRemove = [];
+  let i = 0;
+  let attr;
+  while (attr = node.attributes[i++]) {
+    if (expressions.i >= expressions.e.length)
+      return;
+    if (attr.value !== delimiterComment)
+      continue;
+    let attrName = attr.name;
+    const expression = expressions.e[expressions.i++];
+    if (attrName.charAt(0) === "@") {
+      const event = attrName.substring(1);
+      node.addEventListener(event, expression);
+      if (!listeners.has(node))
+        listeners.set(node, /* @__PURE__ */ new Map());
+      (_a = listeners.get(node)) === null || _a === void 0 ? void 0 : _a.set(event, expression);
+      toRemove.push(attrName);
+    } else {
+      const isIDL = attrName === "value" && "value" in node || attrName === "checked" || attrName.startsWith(".") && (attrName = attrName.substring(1));
+      w(expression, (value) => {
+        if (isIDL) {
+          node[attrName] = value;
+          if (node.getAttribute(attrName) != value)
+            value = false;
+        }
+        value !== false ? node.setAttribute(attrName, value) : (node.removeAttribute(attrName), i--);
+      });
+    }
+  }
+  toRemove.forEach((attrName) => node.removeAttribute(attrName));
+}
+function removeNodes(node) {
+  node.forEach(removeNode);
+}
+function removeNode(node) {
+  var _a;
+  node.remove();
+  (_a = listeners.get(node)) === null || _a === void 0 ? void 0 : _a.forEach((listener, event) => node.removeEventListener(event, listener));
+}
+function comment(node, expressions) {
+  var _a;
+  const expression = expressions.e[expressions.i++];
+  let boundNode;
+  if (expression && isTpl(expression.e)) {
+    boundNode = createPartial().add(expression.e)();
+  } else {
+    let partialMemo;
+    boundNode = (partialMemo = w(expression, (value) => setNode(value, partialMemo)))();
+  }
+  (_a = node.parentNode) === null || _a === void 0 ? void 0 : _a.replaceChild(boundNode, node);
+}
+function setNode(value, p) {
+  const isUpdate = typeof p === "function";
+  const partial = isUpdate ? p : createPartial();
+  Array.isArray(value) ? value.forEach((item) => measure("partialAdd", () => partial.add(item))) : partial.add(value);
+  if (isUpdate)
+    partial._up();
+  return partial;
+}
+function createNodes(html2) {
+  var _a;
+  const tpl = (_a = templateMemo[html2]) !== null && _a !== void 0 ? _a : (() => {
+    const tpl2 = document.createElement("template");
+    tpl2.innerHTML = html2;
+    return templateMemo[html2] = tpl2;
+  })();
+  const dom = tpl.content.cloneNode(true);
+  dom.normalize();
+  return dom;
+}
+function createPartial(group = /* @__PURE__ */ Symbol()) {
+  let html2 = "";
+  let expressions = { i: 0, e: [] };
+  let chunks = [];
+  let previousChunks = [];
+  const keyedChunks = /* @__PURE__ */ new Map();
+  const toRemove = [];
+  const partial = () => {
+    let dom;
+    if (!chunks.length)
+      addPlaceholderChunk();
+    if (chunks.length === 1 && !isTpl(chunks[0].tpl)) {
+      const chunk = chunks[0];
+      chunk.dom.length ? chunk.dom[0].nodeValue = chunk.tpl : chunk.dom.push(document.createTextNode(chunk.tpl));
+      dom = chunk.dom[0];
+    } else {
+      dom = assignDomChunks(fragment(createNodes(html2), expressions)());
+    }
+    reset();
+    return dom;
+  };
+  partial.ch = () => previousChunks;
+  partial.l = 0;
+  partial.add = (tpl) => {
+    if (!tpl && tpl !== 0)
+      return partial;
+    let localExpressions = [];
+    let key;
+    let template = "";
+    if (isTpl(tpl)) {
+      [template, localExpressions, key] = tpl._h();
+    }
+    html2 += template;
+    html2 += bookendComment;
+    const keyedChunk = key && keyedChunks.get(key);
+    const chunk = keyedChunk || {
+      html: template,
+      exp: localExpressions,
+      dom: [],
+      tpl,
+      key
+    };
+    chunks.push(chunk);
+    if (key) {
+      keyedChunk ? keyedChunk.exp.forEach((exp, i) => exp._up(localExpressions[i].e)) : keyedChunks.set(key, chunk);
+    }
+    expressions.e.push(...localExpressions);
+    partial.l++;
+    return partial;
+  };
+  partial._up = () => {
+    const subPartial = createPartial(group);
+    let startChunking = 0;
+    let lastNode = previousChunks[0].dom[0];
+    if (!chunks.length)
+      addPlaceholderChunk(document.createComment(""));
+    const closeSubPartial = () => {
+      if (!subPartial.l)
+        return;
+      const frag = subPartial();
+      const last = frag.lastChild;
+      lastNode[startChunking ? "after" : "before"](frag);
+      transferChunks(subPartial, chunks, startChunking);
+      lastNode = last;
+    };
+    chunks.forEach((chunk, index) => {
+      const prev = previousChunks[index];
+      if (chunk.key && chunk.dom.length) {
+        closeSubPartial();
+        if (!prev || prev.dom !== chunk.dom) {
+          lastNode[index ? "after" : "before"](...chunk.dom);
+        }
+        lastNode = chunk.dom[chunk.dom.length - 1];
+      } else if (prev && chunk.html === prev.html && !prev.key) {
+        closeSubPartial();
+        prev.exp.forEach((expression, i) => expression._up(chunk.exp[i].e));
+        chunk.exp = prev.exp;
+        chunk.dom = prev.dom;
+        lastNode = chunk.dom[chunk.dom.length - 1];
+        if (isTextNodeChunk(chunk) && lastNode instanceof Text) {
+          lastNode.nodeValue = chunk.tpl;
+        }
+      } else {
+        if (prev && chunk.html !== prev.html && !prev.key) {
+          toRemove.push(...prev.dom);
+        }
+        if (!subPartial.l)
+          startChunking = index;
+        subPartial.add(chunk.tpl);
+      }
+    });
+    closeSubPartial();
+    let node = lastNode === null || lastNode === void 0 ? void 0 : lastNode.nextSibling;
+    while (node && group in node) {
+      toRemove.push(node);
+      const next = node.nextSibling;
+      node = next;
+    }
+    removeNodes(toRemove);
+    reset();
+  };
+  const reset = () => {
+    toRemove.length = 0;
+    html2 = "";
+    partial.l = 0;
+    expressions = { i: 0, e: [] };
+    previousChunks = [...chunks];
+    chunks = [];
+  };
+  const addPlaceholderChunk = (node) => {
+    html2 = "<!---->";
+    chunks.push({
+      html: html2,
+      exp: [],
+      dom: node ? [node] : [],
+      tpl: t`${html2}`,
+      key: 0
+    });
+  };
+  const assignDomChunks = (frag) => {
+    let chunkIndex = 0;
+    const toRemove2 = [];
+    frag.childNodes.forEach((node) => {
+      if (node.nodeType === 8 && node.data === bookend) {
+        chunkIndex++;
+        toRemove2.push(node);
+        return;
+      }
+      Object.defineProperty(node, group, { value: group });
+      chunks[chunkIndex].dom.push(node);
+    });
+    toRemove2.forEach((node) => node.remove());
+    return frag;
+  };
+  const transferChunks = (partialA, chunksB, chunkIndex) => {
+    partialA.ch().forEach((chunk, index) => {
+      chunksB[chunkIndex + index].dom = chunk.dom;
+    });
+  };
+  return partial;
+}
+function isTextNodeChunk(chunk) {
+  return chunk.dom.length === 1 && !isTpl(chunk.tpl);
+}
+var html = t;
+var reactive = r;
+var watch = w;
 export {
-  component as c,
-  component,
   html,
+  measurements,
   nextTick,
-  onCleanup,
-  pick,
-  pick as props,
-  reactive as r,
+  r,
   reactive,
-  svg,
-  html as t,
-  watch as w,
+  t,
+  w,
   watch
 };
